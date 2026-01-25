@@ -3,28 +3,8 @@ import pandas as pd
 import requests
 from datetime import datetime
 
-# Seiteneinstellungen für Mobile-Ansicht
-st.set_page_config(
-    page_title="Vienna Powder Alert",
-    page_icon="❄️",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
-
-# Design-Optimierung
-st.markdown("""
-    <style>
-    .stMetric {
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    }
-    [data-testid="stMetricValue"] {
-        color: #0044ff;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# Seiteneinstellungen
+st.set_page_config(page_title="Vienna Powder Alert", page_icon="❄️", layout="wide")
 
 # Datenbank der Skigebiete
 SKIGEBIETE = {
@@ -41,12 +21,12 @@ def get_weather_data():
     base_url = "https://api.open-meteo.com/v1/forecast"
     
     for name, info in SKIGEBIETE.items():
-        # Parameter als Dictionary übergeben (verhindert 400 Bad Request)
         params = {
             "latitude": info['lat'],
             "longitude": info['lon'],
             "daily": "snowfall_sum",
-            "timezone": "Europe/Berlin"
+            "timezone": "Europe/Berlin",
+            "past_days": 1  # Holt die Daten von gestern dazu
         }
         
         try:
@@ -57,14 +37,16 @@ def get_weather_data():
             snow_days = data['daily']['snowfall_sum']
             dates = data['daily']['time']
             
-            # Neuschnee Vorhersage (Heute + Morgen Summe)
-            snow_next_24h = round(snow_days[0] + snow_days[1], 1)
+            # Index 0 ist Gestern, Index 1 ist Heute, Index 2 ist Morgen
+            snow_past_24h = round(snow_days[0], 1)
+            snow_next_24h = round(snow_days[1] + snow_days[2], 1)
             
             results.append({
                 "Skigebiet": name,
                 "lat": info['lat'],
                 "lon": info['lon'],
-                "Neuschnee (cm)": snow_next_24h,
+                "Schnee Gestern (cm)": snow_past_24h,
+                "Schnee Morgen (cm)": snow_next_24h,
                 "Anfahrt": info['zeit'],
                 "Webcam": info['cam'],
                 "Woche": snow_days,
@@ -75,54 +57,41 @@ def get_weather_data():
             continue
     return results
 
-# --- UI ---
 st.title("❄️ Vienna Powder Alert")
-st.write(f"Stand: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
 
-if st.button('🚀 Jetzt Powder-Check starten'):
-    with st.spinner('Wetter-Götter werden befragt...'):
+if st.button('🚀 Neuschnee-Check (Vergangenheit & Zukunft)'):
+    with st.spinner('Daten werden analysiert...'):
         data = get_weather_data()
         
         if data:
-            df = pd.DataFrame(data).sort_values(by="Neuschnee (cm)", ascending=False)
+            df = pd.DataFrame(data).sort_values(by="Schnee Morgen (cm)", ascending=False)
             
-            # 1. Großer Alarm Check (30cm Regel)
-            max_snow = df["Neuschnee (cm)"].max()
-            if max_snow >= 30:
+            # Powder Alarm Check
+            if df["Schnee Morgen (cm)"].max() >= 30:
                 st.balloons()
-                st.success(f"🔥 FETTER POWDER ALARM! {max_snow}cm Neuschnee gemeldet!")
-            elif max_snow >= 10:
-                st.info(f"Gute Bedingungen: Bis zu {max_snow}cm Neuschnee.")
-            else:
-                st.warning("Aktuell kein massiver Neuschnee vorhergesagt.")
+                st.success("🔥 POWDER ALARM für Morgen!")
 
-            # 2. Karte
-            st.subheader("📍 Skigebiete Map")
-            df['color'] = df['Neuschnee (cm)'].apply(lambda x: '#0044ff' if x >= 10 else '#a0a0a0')
-            st.map(df, latitude='lat', longitude='lon', color='color', size=2500)
-
-            # 3. Top 3 Gebiete
-            st.divider()
-            st.subheader("Beste Optionen (nächste 24h)")
-            cols = st.columns(min(len(data), 3))
+            # 1. Metriken für die Top-Gebiete
+            st.subheader("Top-Spots in der Nähe")
+            cols = st.columns(3)
             for i, resort in enumerate(data[:3]):
                 with cols[i]:
-                    st.metric(label=resort['Skigebiet'], value=f"{resort['Neuschnee (cm)']} cm", delta=f"🚗 {resort['Anfahrt']}")
+                    st.metric(
+                        label=resort['Skigebiet'], 
+                        value=f"{resort['Schnee Morgen (cm)']} cm Morgen", 
+                        delta=f"{resort['Schnee Gestern (cm)']} cm Gestern"
+                    )
                     st.link_button("📷 Webcam", resort['Webcam'])
 
-            # 4. 7-Tage-Check
+            # 2. Komplette Tabelle
             st.divider()
-            st.subheader("📅 Die nächsten 7 Tage")
-            for r in data:
-                with st.expander(f"Details für {r['Skigebiet']} anzeigen"):
-                    chart_data = pd.DataFrame({
-                        "Datum": [datetime.strptime(d, '%Y-%m-%d').strftime('%d.%m.') for d in r['Daten']],
-                        "Schnee (cm)": r['Woche']
-                    }).set_index("Datum")
-                    st.bar_chart(chart_data)
-                    st.table(chart_data.T)
-        else:
-            st.error("Es konnten keine Daten geladen werden. Prüfe die Internetverbindung.")
+            st.subheader("Alle Gebiete im Überblick")
+            st.dataframe(df[["Skigebiet", "Schnee Gestern (cm)", "Schnee Morgen (cm)", "Anfahrt"]], use_container_width=True)
 
-st.divider()
-st.caption("Daten von Open-Meteo. Neuschnee 24h berechnet aus der Summe von heute und morgen.")
+            # 3. Karte
+            st.map(df, latitude='lat', longitude='lon', size=2000)
+            
+        else:
+            st.error("Daten konnten nicht geladen werden.")
+
+st.caption("Hinweis: 'Schnee Gestern' zeigt den tatsächlichen Schneefall der letzten 24h laut Wettermodell.")
