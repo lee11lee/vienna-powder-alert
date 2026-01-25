@@ -3,13 +3,30 @@ import pandas as pd
 import requests
 from datetime import datetime
 
-# Seiteneinstellungen
-st.set_page_config(page_title="Vienna Powder Alert", page_icon="❄️", layout="wide")
+# Seiteneinstellungen für Mobile-Ansicht
+st.set_page_config(
+    page_title="Vienna Powder Alert",
+    page_icon="❄️",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
-st.title("❄️ Vienna Powder Alert")
-st.write("Echtzeit-Check der Schneevorhersage für Skigebiete nah bei Wien.")
+# Design-Optimierung
+st.markdown("""
+    <style>
+    .stMetric {
+        background-color: #ffffff;
+        padding: 15px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    [data-testid="stMetricValue"] {
+        color: #0044ff;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-# Datenbank
+# Datenbank der Skigebiete
 SKIGEBIETE = {
     "Stuhleck": {"lat": 47.57, "lon": 15.79, "zeit": "75 Min.", "cam": "https://www.stuhleck.at/service/webcams/"},
     "Mönichkirchen": {"lat": 47.51, "lon": 15.99, "zeit": "65 Min.", "cam": "https://www.schischaukel.at/webcams"},
@@ -21,18 +38,26 @@ SKIGEBIETE = {
 
 def get_weather_data():
     results = []
+    base_url = "https://api.open-meteo.com/v1/forecast"
+    
     for name, info in SKIGEBIETE.items():
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={info['lat']}&longitude={info['lon']}&daily=snowfall_sum&timezone=Europe%2Berlin"
+        # Parameter als Dictionary übergeben (verhindert 400 Bad Request)
+        params = {
+            "latitude": info['lat'],
+            "longitude": info['lon'],
+            "daily": "snowfall_sum",
+            "timezone": "Europe/Berlin"
+        }
         
         try:
-            # Nutzung der 'requests' Library mit Timeout
-            response = requests.get(url, timeout=10)
-            response.raise_for_status() # Prüft auf HTTP Fehler
+            response = requests.get(base_url, params=params, timeout=10)
+            response.raise_for_status() 
             data = response.json()
             
             snow_days = data['daily']['snowfall_sum']
             dates = data['daily']['time']
-            # Heute + Morgen Summe
+            
+            # Neuschnee Vorhersage (Heute + Morgen Summe)
             snow_next_24h = round(snow_days[0] + snow_days[1], 1)
             
             results.append({
@@ -46,36 +71,58 @@ def get_weather_data():
                 "Daten": dates
             })
         except Exception as e:
-            st.error(f"Verbindungsfehler bei {name}: {e}")
+            st.sidebar.error(f"Fehler bei {name}: {e}")
             continue
     return results
 
-if st.button('🚀 Powder-Check starten'):
-    with st.spinner('Daten werden geladen...'):
+# --- UI ---
+st.title("❄️ Vienna Powder Alert")
+st.write(f"Stand: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
+
+if st.button('🚀 Jetzt Powder-Check starten'):
+    with st.spinner('Wetter-Götter werden befragt...'):
         data = get_weather_data()
         
         if data:
             df = pd.DataFrame(data).sort_values(by="Neuschnee (cm)", ascending=False)
             
-            # 1. Großer Alarm
+            # 1. Großer Alarm Check (30cm Regel)
             max_snow = df["Neuschnee (cm)"].max()
             if max_snow >= 30:
                 st.balloons()
-                st.success(f"🔥 POWDER ALARM! {max_snow}cm Neuschnee!")
-            
+                st.success(f"🔥 FETTER POWDER ALARM! {max_snow}cm Neuschnee gemeldet!")
+            elif max_snow >= 10:
+                st.info(f"Gute Bedingungen: Bis zu {max_snow}cm Neuschnee.")
+            else:
+                st.warning("Aktuell kein massiver Neuschnee vorhergesagt.")
+
             # 2. Karte
-            st.subheader("📍 Übersichtskarte")
-            df['color'] = df['Neuschnee (cm)'].apply(lambda x: '#0000ff' if x >= 10 else '#808080')
+            st.subheader("📍 Skigebiete Map")
+            df['color'] = df['Neuschnee (cm)'].apply(lambda x: '#0044ff' if x >= 10 else '#a0a0a0')
             st.map(df, latitude='lat', longitude='lon', color='color', size=2500)
 
-            # 3. Details
-            st.subheader("Ergebnisse")
-            st.dataframe(df[["Skigebiet", "Neuschnee (cm)", "Anfahrt"]], use_container_width=True)
-            
+            # 3. Top 3 Gebiete
+            st.divider()
+            st.subheader("Beste Optionen (nächste 24h)")
+            cols = st.columns(min(len(data), 3))
+            for i, resort in enumerate(data[:3]):
+                with cols[i]:
+                    st.metric(label=resort['Skigebiet'], value=f"{resort['Neuschnee (cm)']} cm", delta=f"🚗 {resort['Anfahrt']}")
+                    st.link_button("📷 Webcam", resort['Webcam'])
+
+            # 4. 7-Tage-Check
+            st.divider()
+            st.subheader("📅 Die nächsten 7 Tage")
             for r in data:
-                with st.expander(f"7-Tage Trend: {r['Skigebiet']}"):
-                    chart_data = pd.DataFrame({"Datum": r['Daten'], "Schnee": r['Woche']}).set_index("Datum")
+                with st.expander(f"Details für {r['Skigebiet']} anzeigen"):
+                    chart_data = pd.DataFrame({
+                        "Datum": [datetime.strptime(d, '%Y-%m-%d').strftime('%d.%m.') for d in r['Daten']],
+                        "Schnee (cm)": r['Woche']
+                    }).set_index("Datum")
                     st.bar_chart(chart_data)
-                    st.link_button(f"Live-Webcam {r['Skigebiet']}", r['Webcam'])
+                    st.table(chart_data.T)
         else:
-            st.error("Es konnten keine Daten geladen werden. Bitte kontrolliere die 'Logs' in Streamlit.")
+            st.error("Es konnten keine Daten geladen werden. Prüfe die Internetverbindung.")
+
+st.divider()
+st.caption("Daten von Open-Meteo. Neuschnee 24h berechnet aus der Summe von heute und morgen.")
