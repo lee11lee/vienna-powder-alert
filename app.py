@@ -26,7 +26,7 @@ def get_weather_data():
             "longitude": info['lon'],
             "daily": "snowfall_sum",
             "timezone": "Europe/Berlin",
-            "past_days": 1  # Holt die Daten von gestern dazu
+            "past_days": 1 
         }
         
         try:
@@ -34,11 +34,12 @@ def get_weather_data():
             response.raise_for_status() 
             data = response.json()
             
-            snow_days = data['daily']['snowfall_sum']
+            snow_days = data['daily']['snowfall_sum'] # [Gestern, Heute, Morgen, Tag3, Tag4, Tag5, Tag6, Tag7]
             dates = data['daily']['time']
             
-            # Index 0 ist Gestern, Index 1 ist Heute, Index 2 ist Morgen
+            # Gestern (Index 0)
             snow_past_24h = round(snow_days[0], 1)
+            # Morgen-Check (Heute + Morgen Summe, Index 1 + 2)
             snow_next_24h = round(snow_days[1] + snow_days[2], 1)
             
             results.append({
@@ -49,31 +50,33 @@ def get_weather_data():
                 "Schnee Morgen (cm)": snow_next_24h,
                 "Anfahrt": info['zeit'],
                 "Webcam": info['cam'],
-                "Woche": snow_days,
-                "Daten": dates
+                "Woche_Schnee": snow_days[1:], # Ab heute für 7 Tage
+                "Woche_Daten": dates[1:]
             })
         except Exception as e:
             st.sidebar.error(f"Fehler bei {name}: {e}")
             continue
     return results
 
-st.title("❄️ Vienna Powder Alert")
+st.title("❄️ Vienna Powder Alert Pro")
+st.write(f"Update: {datetime.now().strftime('%d.%m.%Y %H:%M')}")
 
-if st.button('🚀 Neuschnee-Check (Vergangenheit & Zukunft)'):
-    with st.spinner('Daten werden analysiert...'):
+if st.button('🚀 Daten für Wien & Umgebung abrufen'):
+    with st.spinner('Wetterdaten werden geladen...'):
         data = get_weather_data()
         
         if data:
             df = pd.DataFrame(data).sort_values(by="Schnee Morgen (cm)", ascending=False)
             
-            # Powder Alarm Check
-            if df["Schnee Morgen (cm)"].max() >= 30:
+            # 1. Powder Alarm
+            max_snow = df["Schnee Morgen (cm)"].max()
+            if max_snow >= 30:
                 st.balloons()
-                st.success("🔥 POWDER ALARM für Morgen!")
+                st.success(f"🔥 FETTER POWDER ALARM! {max_snow}cm Neuschnee erwartet!")
 
-            # 1. Metriken für die Top-Gebiete
-            st.subheader("Top-Spots in der Nähe")
-            cols = st.columns(3)
+            # 2. Highlights (Kacheln)
+            st.subheader("Quick-Check")
+            cols = st.columns(min(len(data), 3))
             for i, resort in enumerate(data[:3]):
                 with cols[i]:
                     st.metric(
@@ -81,17 +84,38 @@ if st.button('🚀 Neuschnee-Check (Vergangenheit & Zukunft)'):
                         value=f"{resort['Schnee Morgen (cm)']} cm Morgen", 
                         delta=f"{resort['Schnee Gestern (cm)']} cm Gestern"
                     )
-                    st.link_button("📷 Webcam", resort['Webcam'])
+                    # Webcam Link als Button direkt unter der Metrik
+                    st.link_button(f"🔗 Live-Webcam {resort['Skigebiet']}", resort['Webcam'])
 
-            # 2. Komplette Tabelle
+            # 3. Übersichtstabelle
             st.divider()
-            st.subheader("Alle Gebiete im Überblick")
-            st.dataframe(df[["Skigebiet", "Schnee Gestern (cm)", "Schnee Morgen (cm)", "Anfahrt"]], use_container_width=True)
+            st.subheader("Alle Skigebiete im Vergleich")
+            st.table(df[["Skigebiet", "Schnee Gestern (cm)", "Schnee Morgen (cm)", "Anfahrt"]])
 
-            # 3. Karte
-            st.map(df, latitude='lat', longitude='lon', size=2000)
+            # 4. 7-Tage Vorhersage
+            st.divider()
+            st.subheader("📅 7-Tage Neuschnee-Trend")
+            
+            # Wir zeigen für jedes Skigebiet einen Expander mit dem Chart
+            for r in data:
+                with st.expander(f"Detail-Prognose für {r['Skigebiet']}"):
+                    chart_df = pd.DataFrame({
+                        "Datum": [datetime.strptime(d, '%Y-%m-%d').strftime('%a, %d.%m.') for d in r['Woche_Daten']],
+                        "Neuschnee (cm)": r['Woche_Schnee']
+                    }).set_index("Datum")
+                    
+                    st.bar_chart(chart_df)
+                    st.write(f"**Anfahrt von Wien:** {r['Anfahrt']}")
+                    st.link_button("Zur offiziellen Webcam-Seite", r['Webcam'])
+
+            # 5. Karte
+            st.divider()
+            st.subheader("📍 Geografische Übersicht")
+            df['color'] = df['Schnee Morgen (cm)'].apply(lambda x: '#0044ff' if x >= 10 else '#a0a0a0')
+            st.map(df, latitude='lat', longitude='lon', color='color', size=2500)
             
         else:
-            st.error("Daten konnten nicht geladen werden.")
+            st.error("Es konnten keine Daten geladen werden.")
 
-st.caption("Hinweis: 'Schnee Gestern' zeigt den tatsächlichen Schneefall der letzten 24h laut Wettermodell.")
+st.divider()
+st.caption("Datenquelle: Open-Meteo API | Entfernungen ab Wien Zentrum | Gestern = Letzte 24h | Morgen = Vorhersage für die nächsten 24h")
