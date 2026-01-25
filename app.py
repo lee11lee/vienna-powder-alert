@@ -6,14 +6,32 @@ from datetime import datetime
 # Seiteneinstellungen
 st.set_page_config(page_title="Vienna Powder Alert", page_icon="❄️", layout="wide")
 
-# Datenbank der Skigebiete
+# Datenbank der Skigebiete mit Bergfex-Hardlinks
 SKIGEBIETE = {
-    "Stuhleck": {"lat": 47.57, "lon": 15.79, "zeit": "75 Min.", "cam": "https://www.stuhleck.at/service/webcams/"},
-    "Mönichkirchen": {"lat": 47.51, "lon": 15.99, "zeit": "65 Min.", "cam": "https://www.schischaukel.at/webcams"},
-    "Annaberg": {"lat": 47.87, "lon": 15.37, "zeit": "100 Min.", "cam": "https://www.annaberg.info/webcams"},
-    "Gemeindealpe": {"lat": 47.81, "lon": 15.28, "zeit": "120 Min.", "cam": "https://www.gemeindealpe.at/webcams"},
-    "Ötscher": {"lat": 47.85, "lon": 15.15, "zeit": "130 Min.", "cam": "https://www.oetscher.at/webcams"},
-    "Hochkar": {"lat": 47.73, "lon": 14.92, "zeit": "150 Min.", "cam": "https://www.hochkar.com/webcams"}
+    "Stuhleck": {
+        "lat": 47.57, "lon": 15.79, "zeit": "75 Min.", 
+        "bergfex": "https://www.bergfex.at/semmering-stuhleck/schneebericht/"
+    },
+    "Mönichkirchen": {
+        "lat": 47.51, "lon": 15.99, "zeit": "65 Min.", 
+        "bergfex": "https://www.bergfex.at/moenichkirchen-mariensee/schneebericht/"
+    },
+    "Annaberg": {
+        "lat": 47.87, "lon": 15.37, "zeit": "100 Min.", 
+        "bergfex": "https://www.bergfex.at/annaberg/schneebericht/"
+    },
+    "Gemeindealpe": {
+        "lat": 47.81, "lon": 15.28, "zeit": "120 Min.", 
+        "bergfex": "https://www.bergfex.at/mitterbach-gemeindealpe/schneebericht/"
+    },
+    "Ötscher": {
+        "lat": 47.85, "lon": 15.15, "zeit": "130 Min.", 
+        "bergfex": "https://www.bergfex.at/lackenhof-oetscher/schneebericht/"
+    },
+    "Hochkar": {
+        "lat": 47.73, "lon": 14.92, "zeit": "150 Min.", 
+        "bergfex": "https://www.bergfex.at/hochkar/schneebericht/"
+    }
 }
 
 def get_weather_data():
@@ -34,12 +52,12 @@ def get_weather_data():
             response.raise_for_status() 
             data = response.json()
             
-            snow_days = data['daily']['snowfall_sum'] # [Gestern, Heute, Morgen, Tag3, Tag4, Tag5, Tag6, Tag7]
+            snow_days = data['daily']['snowfall_sum'] 
             dates = data['daily']['time']
             
             # Gestern (Index 0)
             snow_past_24h = round(snow_days[0], 1)
-            # Morgen-Check (Heute + Morgen Summe, Index 1 + 2)
+            # Heute + Morgen Summe (Index 1 + 2)
             snow_next_24h = round(snow_days[1] + snow_days[2], 1)
             
             results.append({
@@ -49,8 +67,8 @@ def get_weather_data():
                 "Schnee Gestern (cm)": snow_past_24h,
                 "Schnee Morgen (cm)": snow_next_24h,
                 "Anfahrt": info['zeit'],
-                "Webcam": info['cam'],
-                "Woche_Schnee": snow_days[1:], # Ab heute für 7 Tage
+                "Bergfex": info['bergfex'],
+                "Woche_Schnee": snow_days[1:], 
                 "Woche_Daten": dates[1:]
             })
         except Exception as e:
@@ -84,8 +102,7 @@ if st.button('🚀 Daten für Wien & Umgebung abrufen'):
                         value=f"{resort['Schnee Morgen (cm)']} cm Morgen", 
                         delta=f"{resort['Schnee Gestern (cm)']} cm Gestern"
                     )
-                    # Webcam Link als Button direkt unter der Metrik
-                    st.link_button(f"🔗 Live-Webcam {resort['Skigebiet']}", resort['Webcam'])
+                    st.link_button(f"🔎 Bergfex {resort['Skigebiet']}", resort['Bergfex'])
 
             # 3. Übersichtstabelle
             st.divider()
@@ -96,7 +113,6 @@ if st.button('🚀 Daten für Wien & Umgebung abrufen'):
             st.divider()
             st.subheader("📅 7-Tage Neuschnee-Trend")
             
-            # Wir zeigen für jedes Skigebiet einen Expander mit dem Chart
             for r in data:
                 with st.expander(f"Detail-Prognose für {r['Skigebiet']}"):
                     chart_df = pd.DataFrame({
@@ -106,7 +122,7 @@ if st.button('🚀 Daten für Wien & Umgebung abrufen'):
                     
                     st.bar_chart(chart_df)
                     st.write(f"**Anfahrt von Wien:** {r['Anfahrt']}")
-                    st.link_button("Zur offiziellen Webcam-Seite", r['Webcam'])
+                    st.link_button(f"Gegen-Check auf Bergfex", r['Bergfex'])
 
             # 5. Karte
             st.divider()
@@ -118,4 +134,4 @@ if st.button('🚀 Daten für Wien & Umgebung abrufen'):
             st.error("Es konnten keine Daten geladen werden.")
 
 st.divider()
-st.caption("Datenquelle: Open-Meteo API | Entfernungen ab Wien Zentrum | Gestern = Letzte 24h | Morgen = Vorhersage für die nächsten 24h")
+st.caption("Datenquelle: Open-Meteo API | Bergfex Hardlinks für manuellen Check.")
