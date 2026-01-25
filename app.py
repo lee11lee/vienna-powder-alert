@@ -55,9 +55,7 @@ def get_weather_data():
             snow_days = data['daily']['snowfall_sum'] 
             dates = data['daily']['time']
             
-            # Gestern (Index 0)
             snow_past_24h = round(snow_days[0], 1)
-            # Heute + Morgen Summe (Index 1 + 2)
             snow_next_24h = round(snow_days[1] + snow_days[2], 1)
             
             results.append({
@@ -86,13 +84,10 @@ if st.button('🚀 Daten für Wien & Umgebung abrufen'):
         if data:
             df = pd.DataFrame(data).sort_values(by="Schnee Morgen (cm)", ascending=False)
             
-            # 1. Powder Alarm
-            max_snow = df["Schnee Morgen (cm)"].max()
-            if max_snow >= 30:
+            if df["Schnee Morgen (cm)"].max() >= 30:
                 st.balloons()
-                st.success(f"🔥 FETTER POWDER ALARM! {max_snow}cm Neuschnee erwartet!")
+                st.success(f"🔥 FETTER POWDER ALARM! {df['Schnee Morgen (cm)'].max()}cm Neuschnee erwartet!")
 
-            # 2. Highlights (Kacheln)
             st.subheader("Quick-Check")
             cols = st.columns(min(len(data), 3))
             for i, resort in enumerate(data[:3]):
@@ -104,12 +99,10 @@ if st.button('🚀 Daten für Wien & Umgebung abrufen'):
                     )
                     st.link_button(f"🔎 Bergfex {resort['Skigebiet']}", resort['Bergfex'])
 
-            # 3. Übersichtstabelle
             st.divider()
             st.subheader("Alle Skigebiete im Vergleich")
             st.table(df[["Skigebiet", "Schnee Gestern (cm)", "Schnee Morgen (cm)", "Anfahrt"]])
 
-            # 4. 7-Tage Vorhersage
             st.divider()
             st.subheader("📅 7-Tage Neuschnee-Trend")
             
@@ -121,10 +114,9 @@ if st.button('🚀 Daten für Wien & Umgebung abrufen'):
                     }).set_index("Datum")
                     
                     st.bar_chart(chart_df)
-                    st.write(f"**Anfahrt von Wien:** {r['Anfahrt']}")
+                    st.info(f"💡 **Bergfex-Check:** Suche auf der Bergfex-Seite nach dem Feld 'Neu' oder 'letzter Schneefall'. Die offizielle Messung erfolgt oft nur 1x morgens.")
                     st.link_button(f"Gegen-Check auf Bergfex", r['Bergfex'])
 
-            # 5. Karte
             st.divider()
             st.subheader("📍 Geografische Übersicht")
             df['color'] = df['Schnee Morgen (cm)'].apply(lambda x: '#0044ff' if x >= 10 else '#a0a0a0')
